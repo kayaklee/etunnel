@@ -123,6 +123,7 @@ func (self *tcpClient) processLoop() {
 			dn := self.tcpProxy.popData(blocked)
 			if dn == nil {
 				req.httpService.setErrorHappened()
+				break
 			} else {
 				req.httpService.pushData(dn)
 				for {
