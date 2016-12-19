@@ -36,17 +36,21 @@ func (self *proxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		addr := r.URL.Query().Get("addr")
 		tcp_client = newTCPClient(addr, &tcpClientMgrCallback{self, conn_key})
 		if tcp_client != nil {
-			log.Infof("newTCPClient succ, conn_key=[%s] addr=[%s]", conn_key, addr)
+			log.Infof("newTCPClient succ, client=[%s] addr=[%s] conn_key=[%s]", r.RemoteAddr, addr, conn_key)
 			self.addTCPClient(conn_key, tcp_client)
 		}
 	}
 
-	seq_number, _ := strconv.ParseInt(r.URL.Query().Get("seq"), 10, 64)
 	hr := &httpRequest{
 		httpService: newHTTPService(r, w),
 	}
-	tcp_client.pushHTTPRequest(seq_number, hr)
-	hr.wg.Wait()
+	if tcp_client == nil {
+		hr.httpService.setErrorHappened()
+	} else {
+		seq_number, _ := strconv.ParseInt(r.URL.Query().Get("seq"), 10, 64)
+		tcp_client.pushHTTPRequest(seq_number, hr)
+		hr.wg.Wait()
+	}
 }
 
 func (self *proxyServer) deleteTCPClient(conn_key string) {
@@ -70,4 +74,8 @@ func (self *proxyServer) getTCPClient(conn_key string) (tcp_client iTCPClient) {
 
 func (self *tcpClientMgrCallback) onDestroy() {
 	self.proxyServer.deleteTCPClient(self.connKey)
+}
+
+func (self *tcpClientMgrCallback) getConnKey() string {
+	return self.connKey
 }

@@ -28,7 +28,7 @@ type tcpProxy struct {
 	connAlive bool
 }
 
-func newTCPProxy(conn *net.TCPConn) iTCPProxy {
+func newTCPProxy(conn *net.TCPConn) (tp iTCPProxy) {
 	tp_impl := &tcpProxy{
 		conn:      conn,
 		sendQ:     make(chan *dataBlock, DataQueueSize),
@@ -37,7 +37,8 @@ func newTCPProxy(conn *net.TCPConn) iTCPProxy {
 	}
 	go tp_impl.sendLoop()
 	go tp_impl.recvLoop()
-	return tp_impl
+	tp = tp_impl
+	return tp
 }
 
 func (self *tcpProxy) destroy() {
@@ -57,6 +58,8 @@ func (self *tcpProxy) sendLoop() {
 			log.Warnf("write fail, write_ret=%d err=[%v]", write_ret, err)
 			self.connAlive = false
 			break
+		} else {
+			log.Debugf("send data succ, len=%d addr=[%s]", write_ret, self.conn.RemoteAddr().String())
 		}
 	}
 }
@@ -71,6 +74,8 @@ func (self *tcpProxy) recvLoop() {
 			log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
 			self.connAlive = false
 			break
+		} else {
+			log.Debugf("recv data succ, len=%d addr=[%s]", read_ret, self.conn.RemoteAddr().String())
 		}
 		dn.data = dn.data[:read_ret]
 		self.recvQ <- dn

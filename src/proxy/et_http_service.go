@@ -3,6 +3,7 @@ package proxy
 import (
 	"io"
 	"net/http"
+	log "third/seelog"
 )
 
 type iHTTPService interface {
@@ -16,12 +17,13 @@ type httpService struct {
 	resWriter http.ResponseWriter
 }
 
-func newHTTPService(req *http.Request, res_writer http.ResponseWriter) iHTTPService {
+func newHTTPService(req *http.Request, res_writer http.ResponseWriter) (hs iHTTPService) {
 	hs_impl := &httpService{
 		req:       req,
 		resWriter: res_writer,
 	}
-	return hs_impl
+	hs = hs_impl
+	return hs
 }
 
 func (self *httpService) popData() (dn *dataBlock) {
@@ -47,7 +49,9 @@ func (self *httpService) setErrorHappened() {
 func (self *httpService) pushData(dn *dataBlock) {
 	if dn != nil {
 		self.resWriter.Write(dn.data)
+		log.Debugf("http response write data, len=%d", len(dn.data))
 	} else {
 		self.resWriter.Write(nil)
+		log.Debugf("http response write nil")
 	}
 }
