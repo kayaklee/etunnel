@@ -5,11 +5,6 @@ import (
 	log "third/seelog"
 )
 
-const (
-	DataBlockSize int64 = 65536
-	DataQueueSize int64 = 100
-)
-
 type dataBlock struct {
 	data []byte
 }

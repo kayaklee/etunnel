@@ -30,10 +30,10 @@ func NewProxyServer() *proxyServer {
 }
 
 func (self *proxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	conn_key := r.URL.Query().Get("conn")
+	conn_key := r.URL.Query().Get(QK_CONN_KEY)
 	tcp_client := self.getTCPClient(conn_key)
 	if tcp_client == nil {
-		addr := r.URL.Query().Get("addr")
+		addr := r.URL.Query().Get(QK_ADDR)
 		tcp_client = newTCPClient(addr, &tcpClientMgrCallback{self, conn_key})
 		if tcp_client != nil {
 			log.Infof("newTCPClient succ, client=[%s] addr=[%s] conn_key=[%s]", r.RemoteAddr, addr, conn_key)
@@ -47,7 +47,7 @@ func (self *proxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if tcp_client == nil {
 		hr.httpService.setErrorHappened()
 	} else {
-		seq_number, _ := strconv.ParseInt(r.URL.Query().Get("seq"), 10, 64)
+		seq_number, _ := strconv.ParseInt(r.URL.Query().Get(QK_SEQ), 10, 64)
 		tcp_client.pushHTTPRequest(seq_number, hr)
 		hr.wg.Wait()
 	}
