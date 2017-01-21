@@ -1,9 +1,9 @@
 package proxy
 
 const (
-	QK_CONN_KEY = "conn"
-	QK_ADDR     = "addr"
-	QK_SEQ      = "seq"
+	QK_CONN_KEY = "c"
+	QK_ADDR     = "a"
+	QK_SEQ      = "s"
 
 	QP_DATA = "data"
 )

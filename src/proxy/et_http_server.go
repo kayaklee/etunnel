@@ -8,7 +8,7 @@ import (
 )
 
 type httpRequest struct {
-	httpService iHTTPService
+	httpWrapper iHTTPWrapper
 	wg          sync.WaitGroup
 }
 
@@ -36,16 +36,16 @@ func (self *proxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		addr := r.URL.Query().Get(QK_ADDR)
 		tcp_client = newTCPClient(addr, &tcpClientMgrCallback{self, conn_key})
 		if tcp_client != nil {
-			log.Infof("newTCPClient succ, client=[%s] addr=[%s] conn_key=[%s]", r.RemoteAddr, addr, conn_key)
+			log.Infof("newTCPClient succ, %s", tcp_client.String())
 			self.addTCPClient(conn_key, tcp_client)
 		}
 	}
 
 	hr := &httpRequest{
-		httpService: newHTTPService(r, w),
+		httpWrapper: newHTTPService(r, w),
 	}
 	if tcp_client == nil {
-		hr.httpService.setErrorHappened()
+		hr.httpWrapper.setErrorHappened()
 	} else {
 		seq_number, _ := strconv.ParseInt(r.URL.Query().Get(QK_SEQ), 10, 64)
 		tcp_client.pushHTTPRequest(seq_number, hr)

@@ -27,9 +27,9 @@ func redirectFd(name string) uintptr {
 	return file.Fd()
 }
 
-func BaseMain(appMain func()) {
+func BaseMain(appMain func(command Command)) {
 	rfd := redirectFd("eTunnel")
-	var command command
+	var command Command
 	command.parseCommand(os.Args)
 
 	if _, found := syscall.Getenv(CANCEL_DEAMON_ENV_KEY); !found && *command.StartDaemon {
@@ -51,6 +51,6 @@ func BaseMain(appMain func()) {
 			sid, err := syscall.Setsid()
 			fmt.Fprintf(os.Stdout, "Setsid session_id=[%d] err=[%v]\n", sid, err)
 		}
-		appMain()
+		appMain(command)
 	}
 }

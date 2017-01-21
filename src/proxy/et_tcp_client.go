@@ -9,10 +9,6 @@ import (
 	"time"
 )
 
-const (
-	TCPClientAliveExpiredSec int64 = 100
-)
-
 type iTCPClientMgrCallback interface {
 	getConnKey() string
 	onDestroy()
@@ -22,7 +18,7 @@ type iTCPClient interface {
 	destroy()
 	pushHTTPRequest(seq_number int64, hr *httpRequest) (err error)
 	keepAlive()
-	isAlive(expire_time_sec int64) bool
+	String() string
 }
 
 type tcpClient struct {
@@ -33,7 +29,6 @@ type tcpClient struct {
 	tcpConn            *net.TCPConn
 	tcpProxy           iTCPProxy
 	reqQueue           chan *httpRequest
-	checkTimer         *time.Ticker
 }
 
 func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClient) {
@@ -56,7 +51,6 @@ func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClien
 			tcpConn:            tcp_conn,
 			tcpProxy:           tcp_proxy,
 			reqQueue:           make(chan *httpRequest, DataQueueSize),
-			checkTimer:         time.NewTicker(time.Second),
 		}
 		go tc_impl.processLoop()
 		go tc_impl.checkLoop()
@@ -74,8 +68,8 @@ func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClien
 }
 
 func (self *tcpClient) destroy() {
+	log.Infof("%s", self.String())
 	self.mgrCallback.onDestroy()
-	self.checkTimer.Stop()
 	close(self.reqQueue)
 	self.tcpConn.Close()
 	self.tcpProxy.destroy()
@@ -102,7 +96,7 @@ func (self *tcpClient) keepAlive() {
 func (self *tcpClient) isAlive(expire_time_sec int64) bool {
 	bret := false
 	if common.GetCurrentTime()-self.keeyAliveTimestamp <= expire_time_sec*1000000 &&
-		self.tcpProxy.isConnAlive() {
+		self.tcpProxy.isAlive() {
 		bret = true
 	}
 	return bret
@@ -111,7 +105,7 @@ func (self *tcpClient) isAlive(expire_time_sec int64) bool {
 func (self *tcpClient) processLoop() {
 	for req := range self.reqQueue {
 		for {
-			dn := req.httpService.popData()
+			dn := req.httpWrapper.popData()
 			if dn != nil {
 				self.tcpProxy.pushData(dn)
 			} else {
@@ -122,14 +116,14 @@ func (self *tcpClient) processLoop() {
 			blocked := true
 			dn := self.tcpProxy.popData(blocked)
 			if dn == nil {
-				req.httpService.setErrorHappened()
+				req.httpWrapper.setErrorHappened()
 				break
 			} else {
-				req.httpService.pushData(dn)
+				req.httpWrapper.pushData(dn)
 				for {
 					blocked = false
 					dn := self.tcpProxy.popData(blocked)
-					req.httpService.pushData(dn)
+					req.httpWrapper.pushData(dn)
 					if dn == nil {
 						break
 					}
@@ -141,12 +135,18 @@ func (self *tcpClient) processLoop() {
 }
 
 func (self *tcpClient) checkLoop() {
-	for _ = range self.checkTimer.C {
-		if !self.isAlive(TCPClientAliveExpiredSec) {
+	timer := time.NewTicker(time.Second)
+	for _ = range timer.C {
+		if !self.isAlive(common.G.Server.ConnectionTimeoutSec) {
 			log.Infof("tcp client not alive, will destroy, addr=[%s] conn_key=[%s]",
 				self.tcpConn.RemoteAddr().String(), self.mgrCallback.getConnKey())
 			self.destroy()
 			break
 		}
 	}
+}
+
+func (self *tcpClient) String() string {
+	return fmt.Sprintf("this=%p seq=%d aliveTimestamp=%d %s",
+		self, self.seqNumber, self.keeyAliveTimestamp, self.tcpProxy.String())
 }

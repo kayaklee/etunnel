@@ -3,6 +3,7 @@ package proxy
 import (
 	"bytes"
 	"common"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -12,9 +13,11 @@ import (
 )
 
 type iHTTPClient interface {
-	pushTCPRequest(dn *dataBlock)
-	popTCPRequest() (dn *dataBlock)
+	destroy()
 	isAlive() bool
+	pushTCPRequest(dn *dataBlock)
+	popTCPResponse() (dn *dataBlock)
+	String() string
 }
 
 type httpClient struct {
@@ -45,6 +48,7 @@ func newHTTPClient(host string, dest string) (hc iHTTPClient) {
 }
 
 func (self *httpClient) destroy() {
+	log.Infof("%s", self.String())
 	close(self.sendQ)
 	close(self.recvQ)
 }
@@ -53,7 +57,7 @@ func (self *httpClient) pushTCPRequest(dn *dataBlock) {
 	self.sendQ <- dn
 }
 
-func (self *httpClient) popTCPRequest() (dn *dataBlock) {
+func (self *httpClient) popTCPResponse() (dn *dataBlock) {
 	dn = <-self.recvQ
 	return dn
 }
@@ -64,13 +68,14 @@ func (self *httpClient) isAlive() bool {
 
 func (self *httpClient) processLoop() {
 	for {
-		timer := time.NewTicker(time.Second)
+		timer := time.NewTicker(time.Duration(common.G.Client.KeepAliveTimeSec) * time.Second)
 		select {
 		case dn := <-self.sendQ:
 			if dn == nil {
 				break
 			}
 			self.sendData(dn)
+			continue
 		case <-timer.C:
 			self.keepAlive()
 		}
@@ -122,4 +127,9 @@ func (self *httpClient) sendData(send_dn *dataBlock) {
 
 func (self *httpClient) keepAlive() {
 	self.sendData(nil)
+}
+
+func (self *httpClient) String() string {
+	return fmt.Sprintf("this=%p host=[%s] dest=[%s] seq=%d connKey=%d alive=%t",
+		self, self.host, self.dest, self.seq, self.connKey, self.alive)
 }

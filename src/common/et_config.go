@@ -43,23 +43,25 @@ type client struct {
 	KeepAliveTimeSec  int64  `check:"IntGTZero"`
 }
 
-type command struct {
+type Command struct {
 	ConfigFile   *string
 	LogConfFile  *string
 	PrintVersion *bool
 	StartDaemon  *bool
 	Type         *string
+	Addr         *string
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (self *command) parseCommand(args []string) {
+func (self *Command) parseCommand(args []string) {
 	flagset := flag.NewFlagSet(MY_NAME, flag.ExitOnError)
 	self.ConfigFile = flagset.String("config", "./etc/eTunnel.conf", "Path to config file")
 	self.LogConfFile = flagset.String("logconf", "", "Path to config file")
 	self.PrintVersion = flagset.Bool("version", false, "Print etunnel version")
 	self.StartDaemon = flagset.Bool("daemon", false, "Start daemon server")
 	self.Type = flagset.String("type", "", "eTunnel type server/client")
+	self.Addr = flagset.String("addr", "", "eTunnel destination address")
 	flagset.Parse(args[1:])
 
 	if *self.PrintVersion {
@@ -81,7 +83,7 @@ func (self etConfig) String() string {
 }
 
 func ParseCommandAndFile() error {
-	var command command
+	var command Command
 	command.parseCommand(os.Args)
 
 	_, err := toml.DecodeFile(*command.ConfigFile, &G)
@@ -109,6 +111,11 @@ func ParseCommandAndFile() error {
 	if *command.Type != "server" &&
 		*command.Type != "client" {
 		fmt.Fprintf(os.Stderr, "type must be 'server' or 'client'\n")
+		os.Exit(-1)
+	}
+
+	if *command.Type == "client" && *command.Addr == "" {
+		fmt.Fprintf(os.Stderr, "addr can not be empty while type is client\n")
 		os.Exit(-1)
 	}
 

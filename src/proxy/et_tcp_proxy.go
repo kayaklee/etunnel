@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"net"
 	log "third/seelog"
 )
@@ -11,9 +12,10 @@ type dataBlock struct {
 
 type iTCPProxy interface {
 	destroy()
-	isConnAlive() bool
+	isAlive() bool
 	pushData(dn *dataBlock)
 	popData(block bool) *dataBlock
+	String() string
 }
 
 type tcpProxy struct {
@@ -37,11 +39,13 @@ func newTCPProxy(conn *net.TCPConn) (tp iTCPProxy) {
 }
 
 func (self *tcpProxy) destroy() {
+	log.Infof("%s", self.String())
+	self.conn.Close()
 	close(self.sendQ)
 	close(self.recvQ)
 }
 
-func (self *tcpProxy) isConnAlive() bool {
+func (self *tcpProxy) isAlive() bool {
 	return self.connAlive
 }
 
@@ -54,7 +58,7 @@ func (self *tcpProxy) sendLoop() {
 			self.connAlive = false
 			break
 		} else {
-			log.Debugf("send data succ, len=%d addr=[%s]", write_ret, self.conn.RemoteAddr().String())
+			log.Debugf("send data succ, len=%d %s", write_ret, self.String())
 		}
 	}
 }
@@ -70,7 +74,7 @@ func (self *tcpProxy) recvLoop() {
 			self.connAlive = false
 			break
 		} else {
-			log.Debugf("recv data succ, len=%d addr=[%s]", read_ret, self.conn.RemoteAddr().String())
+			log.Debugf("recv data succ, len=%d %s", read_ret, self.String())
 		}
 		dn.data = dn.data[:read_ret]
 		self.recvQ <- dn
@@ -91,4 +95,10 @@ func (self *tcpProxy) popData(block bool) (dn *dataBlock) {
 		}
 	}
 	return dn
+}
+
+func (self *tcpProxy) String() string {
+	f, _ := self.conn.File()
+	return fmt.Sprintf("this=%p fd=%v remote=[%s] local=[%s] alive=%t",
+		self, f.Fd(), self.conn.RemoteAddr().String(), self.conn.LocalAddr().String(), self.connAlive)
 }
