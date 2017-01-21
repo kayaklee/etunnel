@@ -17,7 +17,7 @@ type httpWrapper struct {
 	resWriter http.ResponseWriter
 }
 
-func newHTTPService(req *http.Request, res_writer http.ResponseWriter) (hs iHTTPWrapper) {
+func newHTTPWrapper(req *http.Request, res_writer http.ResponseWriter) (hs iHTTPWrapper) {
 	hs_impl := &httpWrapper{
 		req:       req,
 		resWriter: res_writer,

@@ -78,8 +78,8 @@ func (self *tcpClient) pushHTTPRequest(seq_number int64, hr *httpRequest) (err e
 	self.lock.Lock()
 	defer self.lock.Unlock()
 	if self.seqNumber+1 != seq_number {
-		log.Warnf("invalid seq number, self=%d param=%d", self.seqNumber, seq_number)
-		err = fmt.Errorf("invalid seq number, self=%d param=%d", self.seqNumber, seq_number)
+		log.Warnf("invalid seq number, current=%d input=%d", self.seqNumber, seq_number)
+		err = fmt.Errorf("invalid seq number, current=%d input=%d", self.seqNumber, seq_number)
 	} else {
 		hr.wg.Add(1)
 		self.seqNumber += 1
@@ -107,21 +107,20 @@ func (self *tcpClient) processLoop() {
 				break
 			}
 		}
-		for {
-			blocked := true
-			dn := self.tcpProxy.popData(blocked)
-			if dn == nil {
-				req.httpWrapper.setErrorHappened()
-				break
-			} else {
+
+		blocked := true
+		dn := self.tcpProxy.popData(blocked)
+		if dn == nil {
+			log.Infof("setErrorHappened")
+			req.httpWrapper.setErrorHappened()
+		} else {
+			req.httpWrapper.pushData(dn)
+			for {
+				blocked = false
+				dn := self.tcpProxy.popData(blocked)
 				req.httpWrapper.pushData(dn)
-				for {
-					blocked = false
-					dn := self.tcpProxy.popData(blocked)
-					req.httpWrapper.pushData(dn)
-					if dn == nil {
-						break
-					}
+				if dn == nil {
+					break
 				}
 			}
 		}

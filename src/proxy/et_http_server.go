@@ -42,7 +42,7 @@ func (self *proxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hr := &httpRequest{
-		httpWrapper: newHTTPService(r, w),
+		httpWrapper: newHTTPWrapper(r, w),
 	}
 	if tcp_client == nil {
 		hr.httpWrapper.setErrorHappened()

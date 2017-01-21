@@ -77,6 +77,7 @@ func (self *httpClient) processLoop() {
 			self.sendData(dn)
 			continue
 		case <-timer.C:
+			log.Infof("timer ticket")
 			self.keepAlive()
 		}
 	}
@@ -113,14 +114,16 @@ func (self *httpClient) sendData(send_dn *dataBlock) {
 				data: make([]byte, DataBlockSize),
 			}
 			read_ret, err := res.Body.Read(recv_dn.data)
+			if read_ret > 0 {
+				recv_dn.data = recv_dn.data[:read_ret]
+				self.recvQ <- recv_dn
+			}
 			if err != nil {
 				log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
 				break
 			} else {
 				log.Debugf("recv data succ, len=%d", read_ret)
 			}
-			recv_dn.data = recv_dn.data[:read_ret]
-			self.recvQ <- recv_dn
 		}
 	}
 }
