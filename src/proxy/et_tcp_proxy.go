@@ -86,12 +86,14 @@ func (self *tcpProxy) pushData(dn *dataBlock) {
 }
 
 func (self *tcpProxy) popData(block bool) (dn *dataBlock) {
-	if block {
-		dn = <-self.recvQ
-	} else {
-		select {
-		case dn = <-self.recvQ:
-		default:
+	if self.isAlive() {
+		if block {
+			dn = <-self.recvQ
+		} else {
+			select {
+			case dn = <-self.recvQ:
+			default:
+			}
 		}
 	}
 	return dn

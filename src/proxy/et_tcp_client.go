@@ -17,7 +17,6 @@ type iTCPClientMgrCallback interface {
 type iTCPClient interface {
 	destroy()
 	pushHTTPRequest(seq_number int64, hr *httpRequest) (err error)
-	keepAlive()
 	String() string
 }
 
@@ -84,19 +83,15 @@ func (self *tcpClient) pushHTTPRequest(seq_number int64, hr *httpRequest) (err e
 	} else {
 		hr.wg.Add(1)
 		self.seqNumber += 1
+		self.keeyAliveTimestamp = common.GetCurrentTime()
 		self.reqQueue <- hr
 	}
 	return err
 }
 
-func (self *tcpClient) keepAlive() {
-	self.keeyAliveTimestamp = common.GetCurrentTime()
-}
-
 func (self *tcpClient) isAlive(expire_time_sec int64) bool {
 	bret := false
-	if common.GetCurrentTime()-self.keeyAliveTimestamp <= expire_time_sec*1000000 &&
-		self.tcpProxy.isAlive() {
+	if common.GetCurrentTime()-self.keeyAliveTimestamp <= expire_time_sec*1000000 {
 		bret = true
 	}
 	return bret

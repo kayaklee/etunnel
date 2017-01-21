@@ -44,6 +44,7 @@ func (self *httpWrapper) popData() (dn *dataBlock) {
 
 func (self *httpWrapper) setErrorHappened() {
 	self.resWriter.WriteHeader(http.StatusBadGateway)
+	self.resWriter.Write(nil)
 }
 
 func (self *httpWrapper) pushData(dn *dataBlock) {
