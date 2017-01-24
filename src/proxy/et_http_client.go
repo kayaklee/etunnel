@@ -21,26 +21,28 @@ type iHTTPClient interface {
 }
 
 type httpClient struct {
-	hc      *http.Client
-	host    string
-	dest    string
-	seq     int64
-	connKey int64
-	sendQ   chan *dataBlock
-	recvQ   chan *dataBlock
-	alive   bool
+	hc        *http.Client
+	host      string
+	dest      string
+	seq       int64
+	connKey   int64
+	sendQ     chan *dataBlock
+	sendQsync chan *dataBlock
+	recvQ     chan *dataBlock
+	alive     bool
 }
 
 func newHTTPClient(host string, dest string) (hc iHTTPClient) {
 	hc_impl := &httpClient{
-		hc:      &http.Client{},
-		host:    host,
-		dest:    dest,
-		seq:     0,
-		connKey: common.GetCurrentTime(),
-		sendQ:   make(chan *dataBlock, DataQueueSize),
-		recvQ:   make(chan *dataBlock, DataQueueSize),
-		alive:   true,
+		hc:        &http.Client{},
+		host:      host,
+		dest:      dest,
+		seq:       0,
+		connKey:   common.GetCurrentTime(),
+		sendQ:     make(chan *dataBlock, DataQueueSize),
+		sendQsync: make(chan *dataBlock, 1),
+		recvQ:     make(chan *dataBlock, DataQueueSize),
+		alive:     true,
 	}
 	go hc_impl.processLoop()
 	hc = hc_impl
@@ -49,8 +51,9 @@ func newHTTPClient(host string, dest string) (hc iHTTPClient) {
 
 func (self *httpClient) destroy() {
 	log.Infof("%s", self.String())
-	close(self.sendQ)
-	close(self.recvQ)
+	self.alive = false
+	close(self.sendQsync)
+	self.recvQ <- nil
 }
 
 func (self *httpClient) pushTCPRequest(dn *dataBlock) {
@@ -58,7 +61,15 @@ func (self *httpClient) pushTCPRequest(dn *dataBlock) {
 }
 
 func (self *httpClient) popTCPResponse() (dn *dataBlock) {
-	dn = <-self.recvQ
+	select {
+	case dn = <-self.recvQ:
+	default:
+	}
+	if dn == nil && self.isAlive() {
+		select {
+		case dn = <-self.recvQ:
+		}
+	}
 	return dn
 }
 
@@ -67,7 +78,7 @@ func (self *httpClient) isAlive() bool {
 }
 
 func (self *httpClient) processLoop() {
-	for {
+	for self.isAlive() {
 		timer := time.NewTicker(time.Duration(common.G.Client.KeepAliveTimeSec) * time.Second)
 		select {
 		case dn := <-self.sendQ:
@@ -76,6 +87,8 @@ func (self *httpClient) processLoop() {
 			}
 			self.sendData(dn)
 			continue
+		case <-self.sendQsync:
+			break
 		case <-timer.C:
 			log.Infof("timer ticket")
 			self.keepAlive()
@@ -119,7 +132,11 @@ func (self *httpClient) sendData(send_dn *dataBlock) {
 				self.recvQ <- recv_dn
 			}
 			if err != nil {
-				log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
+				if err != io.EOF {
+					log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
+				} else {
+					log.Infof("connection close, read_ret=%d err=[%v]", read_ret, err)
+				}
 				break
 			} else {
 				log.Debugf("recv data succ, len=%d", read_ret)

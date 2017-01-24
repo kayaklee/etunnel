@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"fmt"
+	"io"
 	"net"
 	log "third/seelog"
 )
@@ -21,6 +22,7 @@ type iTCPProxy interface {
 type tcpProxy struct {
 	conn      *net.TCPConn
 	sendQ     chan *dataBlock
+	sendQsync chan *dataBlock
 	recvQ     chan *dataBlock
 	connAlive bool
 }
@@ -29,6 +31,7 @@ func newTCPProxy(conn *net.TCPConn) (tp iTCPProxy) {
 	tp_impl := &tcpProxy{
 		conn:      conn,
 		sendQ:     make(chan *dataBlock, DataQueueSize),
+		sendQsync: make(chan *dataBlock, 1),
 		recvQ:     make(chan *dataBlock, DataQueueSize),
 		connAlive: true,
 	}
@@ -41,16 +44,28 @@ func newTCPProxy(conn *net.TCPConn) (tp iTCPProxy) {
 func (self *tcpProxy) destroy() {
 	log.Infof("%s", self.String())
 	self.conn.Close()
-	close(self.sendQ)
-	close(self.recvQ)
+	close(self.sendQsync)
+	self.recvQ <- nil
 }
 
 func (self *tcpProxy) isAlive() bool {
 	return self.connAlive
 }
 
+func (self *tcpProxy) popFromSendQ() (dn *dataBlock) {
+	select {
+	case dn = <-self.sendQ:
+	case dn = <-self.sendQsync:
+	}
+	return dn
+}
+
 func (self *tcpProxy) sendLoop() {
-	for dn := range self.sendQ {
+	for self.isAlive() {
+		dn := self.popFromSendQ()
+		if dn == nil {
+			break
+		}
 		write_ret, err := self.conn.Write(dn.data)
 		if write_ret != len(dn.data) ||
 			err != nil {
@@ -64,20 +79,26 @@ func (self *tcpProxy) sendLoop() {
 }
 
 func (self *tcpProxy) recvLoop() {
-	for {
+	for self.isAlive() {
 		dn := &dataBlock{
 			data: make([]byte, DataBlockSize),
 		}
 		read_ret, err := self.conn.Read(dn.data)
+		if read_ret > 0 {
+			dn.data = dn.data[:read_ret]
+			self.recvQ <- dn
+		}
 		if err != nil {
-			log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
+			if err != io.EOF {
+				log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
+			} else {
+				log.Infof("connection close, read_ret=%d err=[%v]", read_ret, err)
+			}
 			self.connAlive = false
 			break
 		} else {
 			log.Debugf("recv data succ, len=%d %s", read_ret, self.String())
 		}
-		dn.data = dn.data[:read_ret]
-		self.recvQ <- dn
 	}
 }
 
@@ -86,21 +107,19 @@ func (self *tcpProxy) pushData(dn *dataBlock) {
 }
 
 func (self *tcpProxy) popData(block bool) (dn *dataBlock) {
-	if self.isAlive() {
-		if block {
-			dn = <-self.recvQ
-		} else {
-			select {
-			case dn = <-self.recvQ:
-			default:
-			}
+	select {
+	case dn = <-self.recvQ:
+	default:
+	}
+	if dn == nil && block && self.isAlive() {
+		select {
+		case dn = <-self.recvQ:
 		}
 	}
 	return dn
 }
 
 func (self *tcpProxy) String() string {
-	f, _ := self.conn.File()
-	return fmt.Sprintf("this=%p fd=%v remote=[%s] local=[%s] alive=%t",
-		self, f.Fd(), self.conn.RemoteAddr().String(), self.conn.LocalAddr().String(), self.connAlive)
+	return fmt.Sprintf("this=%p remote=[%s] local=[%s] alive=%t",
+		self, self.conn.RemoteAddr().String(), self.conn.LocalAddr().String(), self.connAlive)
 }

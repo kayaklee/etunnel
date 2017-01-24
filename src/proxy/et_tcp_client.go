@@ -28,6 +28,7 @@ type tcpClient struct {
 	tcpConn            *net.TCPConn
 	tcpProxy           iTCPProxy
 	reqQueue           chan *httpRequest
+	reqQueueSync       chan *httpRequest
 }
 
 func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClient) {
@@ -50,6 +51,7 @@ func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClien
 			tcpConn:            tcp_conn,
 			tcpProxy:           tcp_proxy,
 			reqQueue:           make(chan *httpRequest, DataQueueSize),
+			reqQueueSync:       make(chan *httpRequest, 1),
 		}
 		go tc_impl.processLoop()
 		go tc_impl.checkLoop()
@@ -59,9 +61,6 @@ func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClien
 		if tcp_proxy != nil {
 			tcp_proxy.destroy()
 		}
-		if tcp_conn != nil {
-			tcp_conn.Close()
-		}
 	}
 	return tc
 }
@@ -69,8 +68,7 @@ func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClien
 func (self *tcpClient) destroy() {
 	log.Infof("%s", self.String())
 	self.mgrCallback.onDestroy()
-	close(self.reqQueue)
-	self.tcpConn.Close()
+	close(self.reqQueueSync)
 	self.tcpProxy.destroy()
 }
 
@@ -97,8 +95,26 @@ func (self *tcpClient) isAlive(expire_time_sec int64) bool {
 	return bret
 }
 
+func (self *tcpClient) popRequest() (req *httpRequest) {
+	select {
+	case req = <-self.reqQueue:
+	default:
+	}
+	if req == nil {
+		select {
+		case req = <-self.reqQueue:
+		case req = <-self.reqQueueSync:
+		}
+	}
+	return req
+}
+
 func (self *tcpClient) processLoop() {
-	for req := range self.reqQueue {
+	for self.tcpProxy.isAlive() {
+		req := self.popRequest()
+		if req == nil {
+			break
+		}
 		for {
 			dn := req.httpWrapper.popData()
 			if dn != nil {
@@ -107,7 +123,6 @@ func (self *tcpClient) processLoop() {
 				break
 			}
 		}
-
 		blocked := true
 		dn := self.tcpProxy.popData(blocked)
 		if dn == nil {
@@ -132,8 +147,7 @@ func (self *tcpClient) checkLoop() {
 	timer := time.NewTicker(time.Second)
 	for _ = range timer.C {
 		if !self.isAlive(common.G.Server.ConnectionTimeoutSec) {
-			log.Infof("tcp client not alive, will destroy, addr=[%s] conn_key=[%s]",
-				self.tcpConn.RemoteAddr().String(), self.mgrCallback.getConnKey())
+			log.Infof("tcp client not alive, will destroy, %s", self.String())
 			self.destroy()
 			break
 		}
