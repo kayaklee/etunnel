@@ -137,6 +137,7 @@ func (self *httpClient) sendData(send_dn *dataBlock) {
 				} else {
 					log.Infof("connection close, read_ret=%d err=[%v]", read_ret, err)
 				}
+				res.Body.Close()
 				break
 			} else {
 				log.Debugf("recv data succ, len=%d", read_ret)

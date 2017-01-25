@@ -31,7 +31,12 @@ func (self *httpWrapper) popData() (dn *dataBlock) {
 		data: make([]byte, DataBlockSize),
 	}
 	read_ret, err := self.req.Body.Read(dn.data)
-	if err == io.EOF {
+	if err != nil {
+		if err != io.EOF {
+			log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
+		} else {
+			log.Infof("connection close, read_ret=%d err=[%v]", read_ret, err)
+		}
 		self.req.Body.Close()
 	}
 	if read_ret > 0 {
