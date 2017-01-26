@@ -17,6 +17,7 @@ type iTCPClientMgrCallback interface {
 type iTCPClient interface {
 	destroy()
 	pushHTTPRequest(seq_number int64, hr *httpRequest) (err error)
+	keepAlive()
 	String() string
 }
 
@@ -29,6 +30,7 @@ type tcpClient struct {
 	tcpProxy           iTCPProxy
 	reqQueue           chan *httpRequest
 	reqQueueSync       chan *httpRequest
+	resQueue           chan *httpRequest
 }
 
 func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClient) {
@@ -52,8 +54,10 @@ func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClien
 			tcpProxy:           tcp_proxy,
 			reqQueue:           make(chan *httpRequest, DataQueueSize),
 			reqQueueSync:       make(chan *httpRequest, 1),
+			resQueue:           make(chan *httpRequest, DataQueueSize),
 		}
 		go tc_impl.processLoop()
+		go tc_impl.responseLoop()
 		go tc_impl.checkLoop()
 		tc = tc_impl
 	}
@@ -76,8 +80,9 @@ func (self *tcpClient) pushHTTPRequest(seq_number int64, hr *httpRequest) (err e
 	self.lock.Lock()
 	defer self.lock.Unlock()
 	if self.seqNumber+1 != seq_number {
-		log.Warnf("invalid seq number, current=%d input=%d", self.seqNumber, seq_number)
+		log.Warnf("invalid seq number, current=%d input=%d %s", self.seqNumber, seq_number, hr.httpWrapper.String())
 		err = fmt.Errorf("invalid seq number, current=%d input=%d", self.seqNumber, seq_number)
+		hr.httpWrapper.setErrorHappened()
 	} else {
 		hr.wg.Add(1)
 		self.seqNumber += 1
@@ -87,15 +92,20 @@ func (self *tcpClient) pushHTTPRequest(seq_number int64, hr *httpRequest) (err e
 	return err
 }
 
+func (self *tcpClient) keepAlive() {
+	self.keeyAliveTimestamp = common.GetCurrentTime()
+}
+
 func (self *tcpClient) isAlive(expire_time_sec int64) bool {
 	bret := false
-	if common.GetCurrentTime()-self.keeyAliveTimestamp <= expire_time_sec*1000000 {
+	if common.GetCurrentTime()-expire_time_sec*1000000 <= self.keeyAliveTimestamp &&
+		self.tcpProxy.isAlive() {
 		bret = true
 	}
 	return bret
 }
 
-func (self *tcpClient) popRequest() (req *httpRequest) {
+func (self *tcpClient) popRequest2Process() (req *httpRequest) {
 	select {
 	case req = <-self.reqQueue:
 	default:
@@ -111,7 +121,7 @@ func (self *tcpClient) popRequest() (req *httpRequest) {
 
 func (self *tcpClient) processLoop() {
 	for self.tcpProxy.isAlive() {
-		req := self.popRequest()
+		req := self.popRequest2Process()
 		if req == nil {
 			break
 		}
@@ -123,10 +133,21 @@ func (self *tcpClient) processLoop() {
 				break
 			}
 		}
+		req.httpWrapper.startResponse()
+		self.resQueue <- req
+	}
+	self.resQueue <- nil
+}
+
+func (self *tcpClient) responseLoop() {
+	for req := range self.resQueue {
+		if req == nil {
+			break
+		}
 		blocked := true
 		dn := self.tcpProxy.popData(blocked)
 		if dn == nil {
-			log.Infof("setErrorHappened")
+			log.Infof("setErrorHappened, %s", req.httpWrapper.String())
 			req.httpWrapper.setErrorHappened()
 		} else {
 			req.httpWrapper.pushData(dn)
@@ -155,6 +176,6 @@ func (self *tcpClient) checkLoop() {
 }
 
 func (self *tcpClient) String() string {
-	return fmt.Sprintf("this=%p seq=%d aliveTimestamp=%d %s",
-		self, self.seqNumber, self.keeyAliveTimestamp, self.tcpProxy.String())
+	return fmt.Sprintf("this=%p seq=%d aliveTimestamp=%d %s reqQueueLen=%d resQueueLen=%d",
+		self, self.seqNumber, self.keeyAliveTimestamp, self.tcpProxy.String(), len(self.reqQueue), len(self.resQueue))
 }

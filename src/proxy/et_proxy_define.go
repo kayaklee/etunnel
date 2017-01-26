@@ -5,7 +5,8 @@ const (
 	QK_ADDR     = "a"
 	QK_SEQ      = "s"
 
-	QP_DATA = "data"
+	QP_DATA      = "d"
+	QP_KEEPALIVE = "k"
 )
 
 const (

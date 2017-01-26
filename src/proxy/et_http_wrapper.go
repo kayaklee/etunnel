@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	log "third/seelog"
@@ -9,7 +10,9 @@ import (
 type iHTTPWrapper interface {
 	popData() (dn *dataBlock)
 	setErrorHappened()
+	startResponse()
 	pushData(dn *dataBlock)
+	String() string
 }
 
 type httpWrapper struct {
@@ -32,7 +35,7 @@ func (self *httpWrapper) popData() (dn *dataBlock) {
 	}
 	read_ret, err := self.req.Body.Read(dn.data)
 	if err != nil {
-		if err != io.EOF {
+		if err != io.EOF && err != http.ErrBodyReadAfterClose {
 			log.Warnf("read fail, read_ret=%d err=[%v]", read_ret, err)
 		} else {
 			log.Infof("connection close, read_ret=%d err=[%v]", read_ret, err)
@@ -50,6 +53,11 @@ func (self *httpWrapper) popData() (dn *dataBlock) {
 func (self *httpWrapper) setErrorHappened() {
 	self.resWriter.WriteHeader(http.StatusBadGateway)
 	self.resWriter.Write(nil)
+	self.resWriter.(http.Flusher).Flush()
+}
+
+func (self *httpWrapper) startResponse() {
+	self.resWriter.(http.Flusher).Flush()
 }
 
 func (self *httpWrapper) pushData(dn *dataBlock) {
@@ -60,4 +68,9 @@ func (self *httpWrapper) pushData(dn *dataBlock) {
 		self.resWriter.Write(nil)
 		log.Debugf("http response write nil")
 	}
+	self.resWriter.(http.Flusher).Flush()
+}
+
+func (self *httpWrapper) String() string {
+	return fmt.Sprintf("url=[%s]", self.req.URL.String())
 }

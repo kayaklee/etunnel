@@ -28,6 +28,8 @@ type httpClient struct {
 	connKey   int64
 	sendQ     chan *dataBlock
 	sendQsync chan *dataBlock
+	sendNop   chan *dataBlock
+	respQ     chan *http.Response
 	recvQ     chan *dataBlock
 	alive     bool
 }
@@ -41,10 +43,13 @@ func newHTTPClient(host string, dest string) (hc iHTTPClient) {
 		connKey:   common.GetCurrentTime(),
 		sendQ:     make(chan *dataBlock, DataQueueSize),
 		sendQsync: make(chan *dataBlock, 1),
+		sendNop:   make(chan *dataBlock, 1),
 		recvQ:     make(chan *dataBlock, DataQueueSize),
+		respQ:     make(chan *http.Response, DataQueueSize),
 		alive:     true,
 	}
 	go hc_impl.processLoop()
+	go hc_impl.recvLoop()
 	hc = hc_impl
 	return hc
 }
@@ -78,6 +83,7 @@ func (self *httpClient) isAlive() bool {
 }
 
 func (self *httpClient) processLoop() {
+	self.sendNop <- nil
 	for self.isAlive() {
 		timer := time.NewTicker(time.Duration(common.G.Client.KeepAliveTimeSec) * time.Second)
 		select {
@@ -85,7 +91,10 @@ func (self *httpClient) processLoop() {
 			if dn == nil {
 				break
 			}
-			self.sendData(dn)
+			self.sendData(dn, false)
+			continue
+		case <-self.sendNop:
+			self.sendData(nil, false)
 			continue
 		case <-self.sendQsync:
 			break
@@ -94,20 +103,28 @@ func (self *httpClient) processLoop() {
 			self.keepAlive()
 		}
 	}
+	self.respQ <- nil
 }
 
-func (self *httpClient) sendData(send_dn *dataBlock) {
-	self.seq += 1
+func (self *httpClient) sendData(send_dn *dataBlock, is_keep_alive bool) {
+	path := QP_DATA
+	if !is_keep_alive {
+		self.seq += 1
+	} else {
+		path = QP_KEEPALIVE
+	}
 
 	u := url.URL{
 		Scheme: "http",
 		Host:   self.host,
-		Path:   QP_DATA,
+		Path:   path,
 	}
 	q := u.Query()
 	q.Set(QK_CONN_KEY, strconv.FormatInt(self.connKey, 10))
 	q.Set(QK_ADDR, self.dest)
-	q.Set(QK_SEQ, strconv.FormatInt(self.seq, 10))
+	if !is_keep_alive {
+		q.Set(QK_SEQ, strconv.FormatInt(self.seq, 10))
+	}
 	u.RawQuery = q.Encode()
 
 	log.Debugf("send date to url=[%s]", u.String())
@@ -119,9 +136,24 @@ func (self *httpClient) sendData(send_dn *dataBlock) {
 	res, err := self.hc.Do(req)
 	if nil != err ||
 		http.StatusOK != res.StatusCode {
-		log.Warnf("do http request fail, err=[%v] status=[%s]", err, res.Status)
+		status := ""
+		if res != nil {
+			status = res.Status
+		}
+		log.Warnf("do http request fail, err=[%v] status=[%s]", err, status)
 		self.alive = false
+	} else if is_keep_alive {
+		res.Body.Close()
 	} else {
+		self.respQ <- res
+	}
+}
+
+func (self *httpClient) recvLoop() {
+	for res := range self.respQ {
+		if res == nil {
+			break
+		}
 		for {
 			recv_dn := &dataBlock{
 				data: make([]byte, DataBlockSize),
@@ -143,14 +175,18 @@ func (self *httpClient) sendData(send_dn *dataBlock) {
 				log.Debugf("recv data succ, len=%d", read_ret)
 			}
 		}
+		select {
+		case self.sendNop <- nil:
+		default:
+		}
 	}
 }
 
 func (self *httpClient) keepAlive() {
-	self.sendData(nil)
+	self.sendData(nil, true)
 }
 
 func (self *httpClient) String() string {
-	return fmt.Sprintf("this=%p host=[%s] dest=[%s] seq=%d connKey=%d alive=%t",
-		self, self.host, self.dest, self.seq, self.connKey, self.alive)
+	return fmt.Sprintf("this=%p host=[%s] dest=[%s] seq=%d connKey=%d alive=%t sendQLen=%d respQLen=%d recvQLen=%d",
+		self, self.host, self.dest, self.seq, self.connKey, self.alive, len(self.sendQ), len(self.respQ), len(self.recvQ))
 }

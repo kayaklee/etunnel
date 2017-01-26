@@ -43,13 +43,14 @@ func newTCPProxy(conn *net.TCPConn) (tp iTCPProxy) {
 
 func (self *tcpProxy) destroy() {
 	log.Infof("%s", self.String())
+	self.connAlive = false
 	self.conn.Close()
 	close(self.sendQsync)
 	self.recvQ <- nil
 }
 
 func (self *tcpProxy) isAlive() bool {
-	return self.connAlive
+	return (self.connAlive || 0 != len(self.recvQ))
 }
 
 func (self *tcpProxy) popFromSendQ() (dn *dataBlock) {
@@ -120,6 +121,6 @@ func (self *tcpProxy) popData(block bool) (dn *dataBlock) {
 }
 
 func (self *tcpProxy) String() string {
-	return fmt.Sprintf("this=%p remote=[%s] local=[%s] alive=%t",
-		self, self.conn.RemoteAddr().String(), self.conn.LocalAddr().String(), self.connAlive)
+	return fmt.Sprintf("this=%p remote=[%s] local=[%s] alive=%t sendQLen=%d recvQLen=%d",
+		self, self.conn.RemoteAddr().String(), self.conn.LocalAddr().String(), self.connAlive, len(self.sendQ), len(self.recvQ))
 }
