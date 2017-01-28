@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	log "third/seelog"
+	"time"
 )
 
 type dataBlock struct {
@@ -15,7 +16,7 @@ type iTCPProxy interface {
 	destroy()
 	isAlive() bool
 	pushData(dn *dataBlock)
-	popData(block bool) *dataBlock
+	popData(time_wait_us int64) *dataBlock
 	String() string
 }
 
@@ -107,14 +108,20 @@ func (self *tcpProxy) pushData(dn *dataBlock) {
 	self.sendQ <- dn
 }
 
-func (self *tcpProxy) popData(block bool) (dn *dataBlock) {
+func (self *tcpProxy) popData(time_wait_us int64) (dn *dataBlock) {
 	select {
 	case dn = <-self.recvQ:
 	default:
 	}
-	if dn == nil && block && self.isAlive() {
-		select {
-		case dn = <-self.recvQ:
+	if dn == nil && 0 != time_wait_us && (self.isAlive() || 0 < len(self.recvQ)) {
+		if 0 < time_wait_us {
+			timer := time.NewTicker((time.Duration)(time_wait_us) * time.Microsecond)
+			select {
+			case dn = <-self.recvQ:
+			case <-timer.C:
+			}
+		} else {
+			dn = <-self.recvQ
 		}
 	}
 	return dn

@@ -53,8 +53,6 @@ func (self *proxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			seq_number, _ := strconv.ParseInt(r.URL.Query().Get(QK_SEQ), 10, 64)
 			tcp_client.pushHTTPRequest(seq_number, hr)
 			hr.wg.Wait()
-		case QP_KEEPALIVE:
-			tcp_client.keepAlive()
 		default:
 			log.Warnf("invalid path, url=[%s]", r.URL.String())
 			hr.httpWrapper.setErrorHappened()

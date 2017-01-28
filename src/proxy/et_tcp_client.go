@@ -133,8 +133,13 @@ func (self *tcpClient) processLoop() {
 				break
 			}
 		}
-		req.httpWrapper.startResponse()
-		self.resQueue <- req
+		if self.tcpProxy.isAlive() {
+			req.httpWrapper.startResponse()
+			self.resQueue <- req
+		} else {
+			log.Infof("connection not alive, return error, %s", self.String())
+			req.httpWrapper.setErrorHappened()
+		}
 	}
 	self.resQueue <- nil
 }
@@ -144,21 +149,14 @@ func (self *tcpClient) responseLoop() {
 		if req == nil {
 			break
 		}
-		blocked := true
-		dn := self.tcpProxy.popData(blocked)
-		if dn == nil {
-			log.Infof("setErrorHappened, %s", req.httpWrapper.String())
-			req.httpWrapper.setErrorHappened()
-		} else {
+		time_out_us := common.G.Server.KeepAliveTimeSec * 1000000
+		for {
+			dn := self.tcpProxy.popData(time_out_us)
 			req.httpWrapper.pushData(dn)
-			for {
-				blocked = false
-				dn := self.tcpProxy.popData(blocked)
-				req.httpWrapper.pushData(dn)
-				if dn == nil {
-					break
-				}
+			if dn == nil {
+				break
 			}
+			time_out_us = 0
 		}
 		req.wg.Done()
 	}

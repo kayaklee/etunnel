@@ -57,6 +57,7 @@ func (self *httpWrapper) setErrorHappened() {
 }
 
 func (self *httpWrapper) startResponse() {
+	self.resWriter.WriteHeader(http.StatusOK)
 	self.resWriter.(http.Flusher).Flush()
 }
 

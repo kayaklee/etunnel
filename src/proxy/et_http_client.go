@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strconv"
 	log "third/seelog"
-	"time"
 )
 
 type iHTTPClient interface {
@@ -85,46 +84,34 @@ func (self *httpClient) isAlive() bool {
 func (self *httpClient) processLoop() {
 	self.sendNop <- nil
 	for self.isAlive() {
-		timer := time.NewTicker(time.Duration(common.G.Client.KeepAliveTimeSec) * time.Second)
 		select {
 		case dn := <-self.sendQ:
 			if dn == nil {
 				break
 			}
-			self.sendData(dn, false)
+			self.sendData(dn)
 			continue
 		case <-self.sendNop:
-			self.sendData(nil, false)
+			self.sendData(nil)
 			continue
 		case <-self.sendQsync:
 			break
-		case <-timer.C:
-			log.Infof("timer ticket")
-			self.keepAlive()
 		}
 	}
 	self.respQ <- nil
 }
 
-func (self *httpClient) sendData(send_dn *dataBlock, is_keep_alive bool) {
-	path := QP_DATA
-	if !is_keep_alive {
-		self.seq += 1
-	} else {
-		path = QP_KEEPALIVE
-	}
-
+func (self *httpClient) sendData(send_dn *dataBlock) {
+	self.seq += 1
 	u := url.URL{
 		Scheme: "http",
 		Host:   self.host,
-		Path:   path,
+		Path:   QP_DATA,
 	}
 	q := u.Query()
 	q.Set(QK_CONN_KEY, strconv.FormatInt(self.connKey, 10))
 	q.Set(QK_ADDR, self.dest)
-	if !is_keep_alive {
-		q.Set(QK_SEQ, strconv.FormatInt(self.seq, 10))
-	}
+	q.Set(QK_SEQ, strconv.FormatInt(self.seq, 10))
 	u.RawQuery = q.Encode()
 
 	log.Debugf("send date to url=[%s]", u.String())
@@ -142,8 +129,6 @@ func (self *httpClient) sendData(send_dn *dataBlock, is_keep_alive bool) {
 		}
 		log.Warnf("do http request fail, err=[%v] status=[%s]", err, status)
 		self.alive = false
-	} else if is_keep_alive {
-		res.Body.Close()
 	} else {
 		self.respQ <- res
 	}
@@ -180,10 +165,6 @@ func (self *httpClient) recvLoop() {
 		default:
 		}
 	}
-}
-
-func (self *httpClient) keepAlive() {
-	self.sendData(nil, true)
 }
 
 func (self *httpClient) String() string {

@@ -36,11 +36,11 @@ type basic struct {
 
 type server struct {
 	ConnectionTimeoutSec int64 `check:"IntGTZero"`
+	KeepAliveTimeSec     int64 `check:"IntGTZero"`
 }
 
 type client struct {
 	ClientBindAddress string `check:"StringNotEmpty"`
-	KeepAliveTimeSec  int64  `check:"IntGTZero"`
 }
 
 type Command struct {

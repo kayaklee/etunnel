@@ -70,7 +70,7 @@ func (self *tcpServer) destroy() {
 
 func (self *tcpServer) sendLoop() {
 	for self.tcpProxy.isAlive() {
-		dn := self.tcpProxy.popData(true)
+		dn := self.tcpProxy.popData(-1)
 		if dn != nil {
 			self.httpClient.pushTCPRequest(dn)
 		}
