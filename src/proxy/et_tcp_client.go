@@ -149,7 +149,10 @@ func (self *tcpClient) responseLoop() {
 		if req == nil {
 			break
 		}
-		time_out_us := common.G.Server.KeepAliveTimeSec * 1000000
+		time_out_us := int64(0)
+		if 0 == len(self.resQueue) {
+			time_out_us = common.G.Server.KeepAliveTimeSec * 1000000
+		}
 		for {
 			dn := self.tcpProxy.popData(time_out_us)
 			req.httpWrapper.pushData(dn)

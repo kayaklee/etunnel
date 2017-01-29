@@ -47,9 +47,13 @@ func newHTTPClient(host string, dest string) (hc iHTTPClient) {
 		respQ:     make(chan *http.Response, DataQueueSize),
 		alive:     true,
 	}
-	go hc_impl.processLoop()
-	go hc_impl.recvLoop()
-	hc = hc_impl
+	if err := hc_impl.createConnection(); err != nil {
+		hc_impl.destroy()
+	} else {
+		go hc_impl.processLoop()
+		go hc_impl.recvLoop()
+		hc = hc_impl
+	}
 	return hc
 }
 
@@ -101,6 +105,35 @@ func (self *httpClient) processLoop() {
 	self.respQ <- nil
 }
 
+func (self *httpClient) createConnection() (err error) {
+	u := url.URL{
+		Scheme: "http",
+		Host:   self.host,
+		Path:   QP_CONNECT,
+	}
+	q := u.Query()
+	q.Set(QK_CONN_KEY, strconv.FormatInt(self.connKey, 10))
+	q.Set(QK_ADDR, self.dest)
+	u.RawQuery = q.Encode()
+
+	log.Debugf("create connection to url=[%s]", u.String())
+	req, _ := http.NewRequest(http.MethodGet, u.String(), nil)
+	res, err := self.hc.Do(req)
+	if nil != err ||
+		http.StatusOK != res.StatusCode {
+		status := ""
+		if res != nil {
+			status = res.Status
+		}
+		log.Warnf("create connection, err=[%v] status=[%s]", err, status)
+		err = fmt.Errorf("create connection fail, err=[%v] status=[%s]", err, status)
+		self.alive = false
+	} else {
+		log.Infof("create connection success, %s", self.String())
+	}
+	return err
+}
+
 func (self *httpClient) sendData(send_dn *dataBlock) {
 	self.seq += 1
 	u := url.URL{
@@ -110,7 +143,6 @@ func (self *httpClient) sendData(send_dn *dataBlock) {
 	}
 	q := u.Query()
 	q.Set(QK_CONN_KEY, strconv.FormatInt(self.connKey, 10))
-	q.Set(QK_ADDR, self.dest)
 	q.Set(QK_SEQ, strconv.FormatInt(self.seq, 10))
 	u.RawQuery = q.Encode()
 
@@ -160,9 +192,11 @@ func (self *httpClient) recvLoop() {
 				log.Debugf("recv data succ, len=%d", read_ret)
 			}
 		}
-		select {
-		case self.sendNop <- nil:
-		default:
+		if 0 == len(self.respQ) {
+			select {
+			case self.sendNop <- nil:
+			default:
+			}
 		}
 	}
 }
