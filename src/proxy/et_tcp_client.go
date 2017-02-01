@@ -43,7 +43,7 @@ func newTCPClient(addr string, mgr_callback iTCPClientMgrCallback) (tc iTCPClien
 		log.Warnf("ResolveTCPAddr fail, err=[%v] addr=[%s]", err, addr)
 	} else if tcp_conn, err = net.DialTCP("tcp", nil, tcp_addr); err != nil {
 		log.Warnf("DialTCP fail, err=[%v] addr=[%s]", err, addr)
-	} else if tcp_proxy = newTCPProxy(tcp_conn); tcp_proxy == nil {
+	} else if tcp_proxy = newTCPProxy(tcp_conn, &dummyFilter{}); tcp_proxy == nil {
 		log.Warnf("newTCPProxy fail, err=[%v] addr=[%s]", err, addr)
 	} else {
 		tc_impl = &tcpClient{

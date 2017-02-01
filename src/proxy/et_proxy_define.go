@@ -1,5 +1,9 @@
 package proxy
 
+import (
+	"math"
+)
+
 const (
 	QK_CONN_KEY = "c"
 	QK_ADDR     = "a"
@@ -10,6 +14,6 @@ const (
 )
 
 const (
-	DataBlockSize int64 = 65536
+	DataBlockSize int64 = math.MaxUint16
 	DataQueueSize int64 = 100
 )

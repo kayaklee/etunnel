@@ -16,21 +16,31 @@ type iTCPProxy interface {
 	destroy()
 	isAlive() bool
 	pushData(dn *dataBlock)
-	popData(time_wait_us int64) *dataBlock
+	popData(time_wait_us int64) *dataBlock // pop entire encrypt block
 	String() string
+}
+
+type iFilter interface {
+	onDataRecv(dn *dataBlock) (*dataBlock, error)
+	onDataSend(dn *dataBlock) (*dataBlock, error)
+	dataBlockSize() int64
 }
 
 type tcpProxy struct {
 	conn      *net.TCPConn
+	dnFilter  iFilter
 	sendQ     chan *dataBlock
 	sendQsync chan *dataBlock
 	recvQ     chan *dataBlock
 	connAlive bool
 }
 
-func newTCPProxy(conn *net.TCPConn) (tp iTCPProxy) {
+type dummyFilter struct{}
+
+func newTCPProxy(conn *net.TCPConn, dn_filter iFilter) (tp iTCPProxy) {
 	tp_impl := &tcpProxy{
 		conn:      conn,
+		dnFilter:  dn_filter,
 		sendQ:     make(chan *dataBlock, DataQueueSize),
 		sendQsync: make(chan *dataBlock, 1),
 		recvQ:     make(chan *dataBlock, DataQueueSize),
@@ -83,12 +93,18 @@ func (self *tcpProxy) sendLoop() {
 func (self *tcpProxy) recvLoop() {
 	for self.isAlive() {
 		dn := &dataBlock{
-			data: make([]byte, DataBlockSize),
+			data: make([]byte, self.dnFilter.dataBlockSize()),
 		}
 		read_ret, err := self.conn.Read(dn.data)
 		if read_ret > 0 {
 			dn.data = dn.data[:read_ret]
-			self.recvQ <- dn
+			filtered_dn, tmp_err := self.dnFilter.onDataRecv(dn)
+			if filtered_dn != nil && tmp_err == nil {
+				self.recvQ <- filtered_dn
+			}
+			if tmp_err != nil {
+				err = tmp_err
+			}
 		}
 		if err != nil {
 			if err != io.EOF {
@@ -105,7 +121,13 @@ func (self *tcpProxy) recvLoop() {
 }
 
 func (self *tcpProxy) pushData(dn *dataBlock) {
-	self.sendQ <- dn
+	filtered_dn, tmp_err := self.dnFilter.onDataSend(dn)
+	if filtered_dn != nil && tmp_err == nil {
+		self.sendQ <- filtered_dn
+	}
+	if tmp_err != nil {
+		self.connAlive = false
+	}
 }
 
 func (self *tcpProxy) popData(time_wait_us int64) (dn *dataBlock) {
@@ -130,4 +152,16 @@ func (self *tcpProxy) popData(time_wait_us int64) (dn *dataBlock) {
 func (self *tcpProxy) String() string {
 	return fmt.Sprintf("this=%p remote=[%s] local=[%s] alive=%t sendQLen=%d recvQLen=%d",
 		self, self.conn.RemoteAddr().String(), self.conn.LocalAddr().String(), self.connAlive, len(self.sendQ), len(self.recvQ))
+}
+
+func (self *dummyFilter) onDataRecv(dn *dataBlock) (*dataBlock, error) {
+	return dn, nil
+}
+
+func (self *dummyFilter) onDataSend(dn *dataBlock) (*dataBlock, error) {
+	return dn, nil
+}
+
+func (self *dummyFilter) dataBlockSize() int64 {
+	return DataBlockSize
 }

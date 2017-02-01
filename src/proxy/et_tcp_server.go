@@ -54,7 +54,7 @@ func (self *clientServer) Start() {
 func newTCPServer(host string, dest string, conn *net.TCPConn) (ts *tcpServer) {
 	ts = &tcpServer{
 		httpClient: newHTTPClient(host, dest),
-		tcpProxy:   newTCPProxy(conn),
+		tcpProxy:   newTCPProxy(conn, &dummyFilter{}),
 	}
 	go ts.sendLoop()
 	go ts.recvLoop()
