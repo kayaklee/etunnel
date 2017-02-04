@@ -1,0 +1,15 @@
+<seelog type="sync">
+  <outputs formatid="main">
+    <filter levels="debug,trace,info,warn,error">
+      <rollingfile type="date" filename="./log/eTunnel.client.log" datepattern="20060102" maxrolls="30"/>
+    </filter>
+    <filter levels="warn,error">
+      <rollingfile type="date" filename="./log/eTunnel.client.err.log" datepattern="20060102" maxrolls="30"/>-->
+    </filter>
+  </outputs>
+
+  <formats>
+    <format id="main" format="[%Date %Time] %LEVEL [%GoID][%File:%Line %Func] %Msg %n"/>
+  </formats>
+</seelog>
+

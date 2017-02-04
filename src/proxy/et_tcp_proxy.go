@@ -46,6 +46,8 @@ func newTCPProxy(conn *net.TCPConn, dn_filter iFilter) (tp iTCPProxy) {
 		recvQ:     make(chan *dataBlock, DataQueueSize),
 		connAlive: true,
 	}
+	conn.SetReadBuffer(int(dn_filter.dataBlockSize()))
+	conn.SetWriteBuffer(int(dn_filter.dataBlockSize()))
 	go tp_impl.sendLoop()
 	go tp_impl.recvLoop()
 	tp = tp_impl

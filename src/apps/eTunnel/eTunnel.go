@@ -9,23 +9,24 @@ import (
 	"proxy"
 )
 
-func app_main(command common.Command) {
+func app_main() {
 	if err := common.ParseCommandAndFile(); err != nil {
 		fmt.Fprintf(os.Stderr, "ParseCommandAndFile fail, err=[%v]\n", err)
 		os.Exit(-1)
 	}
-	go http.ListenAndServe("0.0.0.0:8060", nil)
 
-	switch *command.Type {
+	switch *common.C.Type {
 	case "server":
+		go http.ListenAndServe(common.G.Server.DebugBindAddress, nil)
 		http.ListenAndServe(
-			common.G.Basic.ServerBindAddress,
+			common.G.Server.BindAddress,
 			proxy.NewProxyServer())
 	case "client":
+		go http.ListenAndServe(common.G.Client.DebugBindAddress, nil)
 		proxy.NewClientServer(
-			common.G.Client.ClientBindAddress,
-			common.G.Basic.ServerBindAddress,
-			*command.Addr).Start()
+			common.G.Client.BindAddress,
+			common.G.Client.ServerAddress,
+			*common.C.Dest).Start()
 	}
 }
 

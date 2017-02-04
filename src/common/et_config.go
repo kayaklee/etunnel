@@ -10,6 +10,7 @@ import (
 )
 
 var G etConfig
+var C etCommand
 
 const (
 	MY_NAME string = "eTunnel"
@@ -29,39 +30,44 @@ var (
 )
 
 type basic struct {
-	LogConfigFile     string `check:"StringNotEmpty"`
-	ServerBindAddress string `check:"StringNotEmpty"`
-	Salt              string `check:"StringNotEmpty"`
 }
 
 type server struct {
-	ConnectionTimeoutSec int64 `check:"IntGTZero"`
-	KeepAliveTimeSec     int64 `check:"IntGTZero"`
+	LogConfigFile        string `check:"StringNotEmpty"`
+	BindAddress          string `check:"StringNotEmpty"`
+	DebugBindAddress     string `check:"StringNotEmpty"`
+	ConnectionTimeoutSec int64  `check:"IntGTZero"`
+	KeepAliveTimeSec     int64  `check:"IntGTZero"`
+	PrivateKeyFilePath   string `check:"StringNotEmpty"`
 }
 
 type client struct {
-	ClientBindAddress string `check:"StringNotEmpty"`
+	LogConfigFile     string `check:"StringNotEmpty"`
+	BindAddress       string `check:"StringNotEmpty"`
+	DebugBindAddress  string `check:"StringNotEmpty"`
+	ServerAddress     string `check:"StringNotEmpty"`
+	PublicKeyFilePath string `check:"StringNotEmpty"`
 }
 
-type Command struct {
+type etCommand struct {
 	ConfigFile   *string
 	LogConfFile  *string
 	PrintVersion *bool
-	StartDaemon  *bool
+	Foreground   *bool
 	Type         *string
-	Addr         *string
+	Dest         *string
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-func (self *Command) parseCommand(args []string) {
+func (self *etCommand) parseCommand(args []string) {
 	flagset := flag.NewFlagSet(MY_NAME, flag.ExitOnError)
 	self.ConfigFile = flagset.String("config", "./etc/eTunnel.conf", "Path to config file")
 	self.LogConfFile = flagset.String("logconf", "", "Path to config file")
 	self.PrintVersion = flagset.Bool("version", false, "Print etunnel version")
-	self.StartDaemon = flagset.Bool("daemon", false, "Start daemon server")
+	self.Foreground = flagset.Bool("fg", false, "Start server in foreground")
 	self.Type = flagset.String("type", "", "eTunnel type server/client")
-	self.Addr = flagset.String("addr", "", "eTunnel destination address")
+	self.Dest = flagset.String("dest", "", "eTunnel destination address")
 	flagset.Parse(args[1:])
 
 	if *self.PrintVersion {
@@ -83,12 +89,22 @@ func (self etConfig) String() string {
 }
 
 func ParseCommandAndFile() error {
-	var command Command
-	command.parseCommand(os.Args)
+	C.parseCommand(os.Args)
 
-	_, err := toml.DecodeFile(*command.ConfigFile, &G)
+	if *C.Type != "server" &&
+		*C.Type != "client" {
+		fmt.Fprintf(os.Stderr, "type must be 'server' or 'client'\n")
+		os.Exit(-1)
+	}
+
+	if *C.Type == "client" && *C.Dest == "" {
+		fmt.Fprintf(os.Stderr, "addr can not be empty while type is client\n")
+		os.Exit(-1)
+	}
+
+	_, err := toml.DecodeFile(*C.ConfigFile, &G)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "config file parse fail, err=[%s] file=[%s]\n", err.Error(), *command.ConfigFile)
+		fmt.Fprintf(os.Stderr, "config file parse fail, err=[%s] file=[%s]\n", err.Error(), *C.ConfigFile)
 		os.Exit(-1)
 	}
 
@@ -98,26 +114,25 @@ func ParseCommandAndFile() error {
 		os.Exit(-1)
 	}
 
-	if *command.LogConfFile != "" {
-		G.Basic.LogConfigFile = *command.LogConfFile
+	var log_config_file string
+	if *C.Type == "server" {
+		if *C.LogConfFile != "" {
+			G.Server.LogConfigFile = *C.LogConfFile
+		}
+		log_config_file = G.Server.LogConfigFile
 	}
-	logger, err := log.LoggerFromConfigAsFile(G.Basic.LogConfigFile)
+	if *C.Type == "client" {
+		if *C.LogConfFile != "" {
+			G.Client.LogConfigFile = *C.LogConfFile
+		}
+		log_config_file = G.Client.LogConfigFile
+	}
+	logger, err := log.LoggerFromConfigAsFile(log_config_file)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "seelog LoggerFromConfigAsFile fail, err=[%s]\n", err.Error())
 		os.Exit(-1)
 	}
 	log.ReplaceLogger(logger)
-
-	if *command.Type != "server" &&
-		*command.Type != "client" {
-		fmt.Fprintf(os.Stderr, "type must be 'server' or 'client'\n")
-		os.Exit(-1)
-	}
-
-	if *command.Type == "client" && *command.Addr == "" {
-		fmt.Fprintf(os.Stderr, "addr can not be empty while type is client\n")
-		os.Exit(-1)
-	}
 
 	log.Infof("parse config succ, %s", G.String())
 	return err
